@@ -8,13 +8,14 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #         Settings most likely to need overriding in local_settings.py         #
 ################################################################################
 
-#Jasmin telnet defaults, override in local_settings.py
+# Jasmin telnet defaults, override in local_settings.py
 TELNET_HOST = '127.0.0.1'
-TELNET_PORT = 8990
+TELNET_PORT = 8991
 TELNET_USERNAME = 'jcliadmin'
 TELNET_PW = 'jclipwd'  # no alternative storing as plain text
 TELNET_TIMEOUT = 10  # reasonable value for intranet.
-
+JASMIN_DOCKER = True  # manage multiple instances of jasmin in docker
+JASMIN_DOCKER_PORTS = []
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -31,10 +32,10 @@ REST_FRAMEWORK = {
 
 
 STANDARD_PROMPT = 'jcli : '  # There should be no need to change this
-INTERACTIVE_PROMPT ='> '  # Prompt for interactive commands
+INTERACTIVE_PROMPT = '> '  # Prompt for interactive commands
 
-#This should be OK for REST API - we are not generating URLs
-#see https://www.djangoproject.com/weblog/2013/feb/19/security/#s-issue-host-header-poisoning
+# This should be OK for REST API - we are not generating URLs
+# see https://www.djangoproject.com/weblog/2013/feb/19/security/#s-issue-host-header-poisoning
 ALLOWED_HOSTS = ['*']
 
 SWAGGER_SETTINGS = {
@@ -125,7 +126,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
-#Simplify config to show/hide Swagger docs
+# Simplify config to show/hide Swagger docs
 SHOW_SWAGGER = True
 
 with open(os.path.join(SETTINGS_DIR, 'local_settings.py')) as f:
