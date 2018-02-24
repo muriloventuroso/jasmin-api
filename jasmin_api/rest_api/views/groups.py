@@ -98,7 +98,7 @@ class GroupViewSet(ViewSet):
         - 404: nonexistent group
         - 400: other error
         """
-        return self.simple_group_action(request.telnet, request.telnet_list 'r', gid)
+        return self.simple_group_action(request.telnet, request.telnet_list, 'r', gid)
 
     @detail_route(methods=['put'])
     def enable(self, request, gid):
