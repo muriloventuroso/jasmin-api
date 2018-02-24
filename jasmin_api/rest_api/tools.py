@@ -50,6 +50,7 @@ def sync_conf_instances(telnet_list):
             telnet.sendline('load\n')
             telnet.expect(r'.*' + STANDARD_PROMPT)
         except:
+            import traceback; traceback.print_exc();
             pass
 
     return

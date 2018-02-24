@@ -15,7 +15,6 @@ router.register(r'mtrouters', MTRouterViewSet, base_name='mtrouters')
 router.register(r'smppsconns', SMPPCCMViewSet, base_name='smppcons')
 router.register(r'httpsconns', HTTPCCMViewSet, base_name='httpcons')
 router.register(r'filters', FiltersViewSet, base_name='filters')
-
 urlpatterns = [
     url(r'^api/', include(router.urls)),
 ]
