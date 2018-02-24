@@ -46,7 +46,10 @@ def split_cols(lines):
 def sync_conf_instances(telnet_list):
     "sync conf in instances of jasmin in docker"
     for telnet in telnet_list:
-        telnet.sendline('load\n')
-        telnet.expect(r'.*' + STANDARD_PROMPT)
+        try:
+            telnet.sendline('load\n')
+            telnet.expect(r'.*' + STANDARD_PROMPT)
+        except:
+            pass
 
     return

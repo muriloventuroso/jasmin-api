@@ -3,7 +3,7 @@ from django.http import JsonResponse
 
 from rest_framework.viewsets import ViewSet
 from rest_framework.parsers import JSONParser
-from rest_framework.decorators import detail_route, parser_classes
+from rest_framework.decorators import list_route, detail_route, parser_classes
 from rest_api.tools import split_cols, sync_conf_instances
 from rest_api.exceptions import (
     JasminSyntaxError, JasminError, ActionFailed,
@@ -64,7 +64,7 @@ class SMPPCCMViewSet(ViewSet):
         else:
             raise ActionFailed(telnet.match.group(1))
 
-    @detail_route(methods=['get'])
+    @list_route(methods=['get'])
     def list_smppc_status(self, request):
         """List SMPP Client Connectors Status. No parameters
         """
@@ -83,7 +83,7 @@ class SMPPCCMViewSet(ViewSet):
 
                     connectors.append(connector)
             instances.append(connectors)
-        return JsonResponse({'connectors': connectors})
+        return JsonResponse({'instances': instances})
 
     def list(self, request):
         """List SMPP Client Connectors. No parameters

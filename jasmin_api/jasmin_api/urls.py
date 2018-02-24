@@ -1,6 +1,6 @@
 from django.conf.urls import include, url
 from django.conf import settings
-
+import django.views
 from rest_framework.routers import DefaultRouter
 
 from rest_api.views import (
@@ -23,5 +23,5 @@ urlpatterns = [
 
 if settings.SHOW_SWAGGER:
     urlpatterns += [url(r'^docs/', include('rest_framework_swagger.urls'))]
-
+    urlpatterns += [url(r'^static/(?P<path>.*)$', django.views.static.serve, {'document_root': settings.STATIC_ROOT})]
 

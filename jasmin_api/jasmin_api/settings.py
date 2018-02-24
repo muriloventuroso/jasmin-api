@@ -15,7 +15,7 @@ TELNET_USERNAME = 'jcliadmin'
 TELNET_PW = 'jclipwd'  # no alternative storing as plain text
 TELNET_TIMEOUT = 10  # reasonable value for intranet.
 JASMIN_DOCKER = True  # manage multiple instances of jasmin in docker
-JASMIN_DOCKER_PORTS = []
+JASMIN_DOCKER_PORTS = [8992, 8993, 8994]
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -25,6 +25,7 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
 }
+SECRET_KEY = 'cbuadc$z@xym4j04%b4cf1+w7x!t1*o=%=av(f47^apz#5*+v5'
 
 ################################################################################
 #                            Other settings                                    #
@@ -129,8 +130,8 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 # Simplify config to show/hide Swagger docs
 SHOW_SWAGGER = True
 
-with open(os.path.join(SETTINGS_DIR, 'local_settings.py')) as f:
-    exec(f.read())
+'''with open(os.path.join(SETTINGS_DIR, 'local_settings.py')) as f:
+    exec(f.read())'''
 
 if SHOW_SWAGGER:
     INSTALLED_APPS += ('rest_framework_swagger',)
