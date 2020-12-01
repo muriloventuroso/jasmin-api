@@ -52,11 +52,11 @@ class UserViewSet(ViewSet):
 
     def retrieve(self, request, uid):
         "Retrieve data for one user"
-        return JsonResponse({'user': self.get_user(request.telnet, uid)})
+        return JsonResponse({'user': self.get_user(request.telnet_list[0], uid)})
 
     def list(self, request):
         "List users. No parameters"
-        telnet = request.telnet
+        telnet = request.telnet_list[0]
         telnet.sendline('user -l')
         telnet.expect([r'(.+)\n' + STANDARD_PROMPT])
         result = telnet.match.group(0).strip()
@@ -109,27 +109,26 @@ class UserViewSet(ViewSet):
           type: string
           paramType: form
         """
-        telnet = request.telnet
         data = request.data
         try:
             uid, gid, username, password = \
                 data['uid'], data['gid'], data['username'], data['password']
         except Exception:
             raise MissingKeyError('Missing parameter: uid, gid, username and/or password required')
-        telnet.sendline('user -a')
-        telnet.expect(r'Adding a new User(.+)\n' + INTERACTIVE_PROMPT)
-        set_ikeys(
-            telnet,
-            {
-                'uid': uid, 'gid': gid, 'username': username,
-                'password': password
-            }
-        )
-        telnet.sendline('persist\n')
-        telnet.expect(r'.*' + STANDARD_PROMPT)
-        if settings.JASMIN_DOCKER:
-            sync_conf_instances(request.telnet_list)
-        return JsonResponse({'user': self.get_user(telnet, uid)})
+        for telnet in request.telnet_list:
+
+            telnet.sendline('user -a')
+            telnet.expect(r'Adding a new User(.+)\n' + INTERACTIVE_PROMPT)
+            set_ikeys(
+                telnet,
+                {
+                    'uid': uid, 'gid': gid, 'username': username,
+                    'password': password
+                }
+            )
+            telnet.sendline('persist\n')
+            telnet.expect(r'.*' + STANDARD_PROMPT)
+        return JsonResponse({'user': self.get_user(request.telnet_list[0], uid)})
 
     @parser_classes((JSONParser,))
     def partial_update(self, request, uid):
@@ -151,49 +150,47 @@ class UserViewSet(ViewSet):
           type: array
           paramType: body
         """
-        telnet = request.telnet
-        telnet.sendline('user -u ' + uid)
-        matched_index = telnet.expect([
-            r'.*Updating User(.*)' + INTERACTIVE_PROMPT,
-            r'.*Unknown User: (.*)' + STANDARD_PROMPT,
-            r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
-        ])
-        if matched_index == 1:
-            raise UnknownError(detail='Unknown user:' + uid)
-        if matched_index != 0:
-            raise JasminError(detail=" ".join(telnet.match.group(0).split()))
-        updates = request.data
-        if not ((type(updates) is list) and (len(updates) >= 1)):
-            raise JasminSyntaxError('updates should be a list')
-        for update in updates:
-            if not ((type(update) is list) and (len(update) >= 1)):
-                raise JasminSyntaxError("Not a list: %s" % update)
-            telnet.sendline(" ".join([x for x in update]))
+        for telnet in request.telnet_list:
+            telnet.sendline('user -u ' + uid)
             matched_index = telnet.expect([
-                r'.*(Unknown User key:.*)' + INTERACTIVE_PROMPT,
-                r'.*(Error:.*)' + STANDARD_PROMPT,
-                r'.*' + INTERACTIVE_PROMPT,
+                r'.*Updating User(.*)' + INTERACTIVE_PROMPT,
+                r'.*Unknown User: (.*)' + STANDARD_PROMPT,
                 r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
             ])
-            if matched_index != 2:
+            if matched_index == 1:
+                raise UnknownError(detail='Unknown user:' + uid)
+            if matched_index != 0:
+                raise JasminError(detail=" ".join(telnet.match.group(0).split()))
+            updates = request.data
+            if not ((type(updates) is list) and (len(updates) >= 1)):
+                raise JasminSyntaxError('updates should be a list')
+            for update in updates:
+                if not ((type(update) is list) and (len(update) >= 1)):
+                    raise JasminSyntaxError("Not a list: %s" % update)
+                telnet.sendline(" ".join([x for x in update]))
+                matched_index = telnet.expect([
+                    r'.*(Unknown User key:.*)' + INTERACTIVE_PROMPT,
+                    r'.*(Error:.*)' + STANDARD_PROMPT,
+                    r'.*' + INTERACTIVE_PROMPT,
+                    r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
+                ])
+                if matched_index != 2:
+                    raise JasminSyntaxError(
+                        detail=" ".join(telnet.match.group(1).split()))
+            telnet.sendline('ok')
+            ok_index = telnet.expect([
+                r'(.*)' + INTERACTIVE_PROMPT,
+                r'.*' + STANDARD_PROMPT,
+            ])
+            if ok_index == 0:
                 raise JasminSyntaxError(
                     detail=" ".join(telnet.match.group(1).split()))
-        telnet.sendline('ok')
-        ok_index = telnet.expect([
-            r'(.*)' + INTERACTIVE_PROMPT,
-            r'.*' + STANDARD_PROMPT,
-        ])
-        if ok_index == 0:
-            raise JasminSyntaxError(
-                detail=" ".join(telnet.match.group(1).split()))
-        telnet.sendline('persist\n')
-        # Not sure why this needs to be repeated
-        telnet.expect(r'.*' + STANDARD_PROMPT)
-        if settings.JASMIN_DOCKER:
-            sync_conf_instances(request.telnet_list)
-        return JsonResponse({'user': self.get_user(telnet, uid)})
+            telnet.sendline('persist\n')
+            # Not sure why this needs to be repeated
+            telnet.expect(r'.*' + STANDARD_PROMPT)
+        return JsonResponse({'user': self.get_user(request.telnet_list[0], uid)})
 
-    def simple_user_action(self, telnet, telnet_list, action, uid, return_user=True):
+    def simple_user_action(self, telnet, action, uid, return_user=True):
         telnet.sendline('user -%s %s' % (action, uid))
         matched_index = telnet.expect([
             r'.+Successfully(.+)' + STANDARD_PROMPT,
@@ -202,8 +199,6 @@ class UserViewSet(ViewSet):
         ])
         if matched_index == 0:
             telnet.sendline('persist\n')
-            if settings.JASMIN_DOCKER:
-                sync_conf_instances(telnet_list)
             if return_user:
                 telnet.expect(r'.*' + STANDARD_PROMPT)
                 return JsonResponse({'user': self.get_user(telnet, uid)})
@@ -223,8 +218,10 @@ class UserViewSet(ViewSet):
         - 404: nonexistent user
         - 400: other error
         """
-        return self.simple_user_action(
-            request.telnet, request.telnet_list, 'r', uid, return_user=False)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_user_action(telnet, 'r', uid, return_user=False)
+        return ret
 
     @detail_route(methods=['put'])
     def enable(self, request, uid):
@@ -236,7 +233,10 @@ class UserViewSet(ViewSet):
         - 404: nonexistent user
         - 400: other error
         """
-        return self.simple_user_action(request.telnet, request.telnet_list, 'e', uid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_user_action(telnet, 'e', uid)
+        return ret
 
     @detail_route(methods=['put'])
     def disable(self, request, uid):
@@ -250,7 +250,10 @@ class UserViewSet(ViewSet):
         - 404: nonexistent user
         - 400: other error
         """
-        return self.simple_user_action(request.telnet, request.telnet_list, 'd', uid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_user_action(telnet, 'd', uid)
+        return ret
 
     @detail_route(methods=['put'])
     def smpp_unbind(self, request, uid):
@@ -264,7 +267,10 @@ class UserViewSet(ViewSet):
         - 404: nonexistent user
         - 400: other error
         """
-        return self.simple_user_action(request.telnet, request.telnet_list, '-smpp-unbind', uid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_user_action(telnet, '-smpp-unbind', uid)
+        return ret
 
     @detail_route(methods=['put'])
     def smpp_ban(self, request, uid):
@@ -278,4 +284,7 @@ class UserViewSet(ViewSet):
         - 404: nonexistent user
         - 400: other error
         """
-        return self.simple_user_action(request.telnet, request.telnet_list, '-smpp-ban', uid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_user_action(telnet, '-smpp-ban', uid)
+        return ret

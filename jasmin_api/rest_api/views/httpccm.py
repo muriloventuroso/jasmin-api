@@ -47,7 +47,7 @@ class HTTPCCMViewSet(ViewSet):
             return []
         return split_cols(result[2:-2])
 
-    def simple_httpccm_action(self, telnet, telnet_list, action, cid):
+    def simple_httpccm_action(self, telnet, action, cid):
         telnet.sendline('httpccm -%s %s' % (action, cid))
         matched_index = telnet.expect([
             r'.+Successfully(.+)' + STANDARD_PROMPT,
@@ -56,8 +56,6 @@ class HTTPCCMViewSet(ViewSet):
         ])
         if matched_index == 0:
             telnet.sendline('persist\n')
-            if settings.JASMIN_DOCKER:
-                sync_conf_instances(telnet_list)
             return JsonResponse({'name': cid})
         elif matched_index == 1:
             raise ObjectNotFoundError('Unknown HTTP Connector: %s' % cid)
@@ -71,7 +69,7 @@ class HTTPCCMViewSet(ViewSet):
         1. the "service" column is called "status"
         2. the cid is the full connector id of the form https(cid)
         """
-        telnet = request.telnet
+        telnet = request.telnet_list[0]
         connector_list = self.get_connector_list(telnet)
         connectors = []
         for raw_data in connector_list:
@@ -90,7 +88,7 @@ class HTTPCCMViewSet(ViewSet):
     def retrieve(self, request, cid):
         """Retreive data for one connector
         Required parameter: cid (connector id)"""
-        telnet = request.telnet
+        telnet = request.telnet_list[0]
         connector = self.get_httpccm(telnet, cid, silent=False)
         connector_list = self.get_connector_list(telnet)
         list_data = next(
@@ -131,27 +129,26 @@ class HTTPCCMViewSet(ViewSet):
           type: string
           paramType: form
         """
-        telnet = request.telnet
-
-        telnet.sendline('httpccm -a')
         data = request.data
-	
-        for k, v in data.items():
-            telnet.sendline("%s %s" % (k, v))
-        telnet.sendline('ok')
-        matched_index = telnet.expect([
-            r'.*(HttpConnector url syntax is invalid.*)' + INTERACTIVE_PROMPT,
-            r'.*(HttpConnector method syntax is invalid, must be GET or POST.*)' + INTERACTIVE_PROMPT,
-            r'.*' + INTERACTIVE_PROMPT,
-            r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
-        ])
-        if matched_index != 2:
-            raise JasminSyntaxError(
-                detail=" ".join(telnet.match.group(1).split()))
-        telnet.sendline('persist\n')
-        telnet.expect(r'.*' + STANDARD_PROMPT)
-        if settings.JASMIN_DOCKER:
-            sync_conf_instances(request.telnet_list)
+        for telnet in request.telnet_list:
+
+            telnet.sendline('httpccm -a')
+        
+            for k, v in data.items():
+                telnet.sendline("%s %s" % (k, v))
+            telnet.sendline('ok')
+            matched_index = telnet.expect([
+                r'.*(HttpConnector url syntax is invalid.*)' + INTERACTIVE_PROMPT,
+                r'.*(HttpConnector method syntax is invalid, must be GET or POST.*)' + INTERACTIVE_PROMPT,
+                r'.*' + INTERACTIVE_PROMPT,
+                r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
+            ])
+            if matched_index != 2:
+                raise JasminSyntaxError(
+                    detail=" ".join(telnet.match.group(1).split()))
+            telnet.sendline('persist\n')
+            telnet.expect(r'.*' + STANDARD_PROMPT)
+
         return JsonResponse({'cid': request.data['cid']})
 
     def destroy(self, request, cid):
@@ -164,5 +161,8 @@ class HTTPCCMViewSet(ViewSet):
         - 404: nonexistent group
         - 400: other error
         """
-        return self.simple_httpccm_action(request.telnet, request.telnet, 'r', cid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_httpccm_action(telnet, 'r', cid)
+        return ret
 

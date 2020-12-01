@@ -47,7 +47,7 @@ class SMPPCCMViewSet(ViewSet):
             return []
         return split_cols(result[2:-2])
 
-    def simple_smppccm_action(self, telnet, telnet_list, action, cid):
+    def simple_smppccm_action(self, telnet,  action, cid):
         telnet.sendline('smppccm -%s %s' % (action, cid))
         matched_index = telnet.expect([
             r'.+Successfully(.+)' + STANDARD_PROMPT,
@@ -56,8 +56,6 @@ class SMPPCCMViewSet(ViewSet):
         ])
         if matched_index == 0:
             telnet.sendline('persist\n')
-            if settings.JASMIN_DOCKER:
-                sync_conf_instances(telnet_list)
             return JsonResponse({'name': cid})
         elif matched_index == 1:
             raise ObjectNotFoundError('Unknown SMPP Connector: %s' % cid)
@@ -68,9 +66,8 @@ class SMPPCCMViewSet(ViewSet):
     def list_smppc_status(self, request):
         """List SMPP Client Connectors Status. No parameters
         """
-        telnet_list = [request.telnet] + request.telnet_list
         instances = []
-        for telnet in telnet_list:
+        for telnet in request.telnet_list:
             connector_list = self.get_connector_list(telnet)
             connectors = []
             for raw_data in connector_list:
@@ -92,7 +89,7 @@ class SMPPCCMViewSet(ViewSet):
         1. the "service" column is called "status"
         2. the cid is the full connector id of the form smpps(cid)
         """
-        telnet = request.telnet
+        telnet = request.telnet_list[0]
         connector_list = self.get_connector_list(telnet)
         connectors = []
         for raw_data in connector_list:
@@ -112,7 +109,7 @@ class SMPPCCMViewSet(ViewSet):
     def retrieve(self, request, cid):
         """Retreive data for one connector
         Required parameter: cid (connector id)"""
-        telnet = request.telnet
+        telnet = request.telnet_list[0]
         connector = self.get_smppccm(telnet, cid, silent=False)
         connector_list = self.get_connector_list(telnet)
         list_data = next(
@@ -142,28 +139,27 @@ class SMPPCCMViewSet(ViewSet):
           type: string
           paramType: form
         """
-        telnet = request.telnet
+        for telnet in request.telnet_list:
 
-        telnet.sendline('smppccm -a')
-        updates = request.data
-        for k, v in updates.items():
-            if not ((type(updates) is dict) and (len(updates) >= 1)):
-                raise JasminSyntaxError('updates should be a a key value array')
-            telnet.sendline("%s %s" % (k, v))
-            matched_index = telnet.expect([
-                r'.*(Unknown SMPPClientConfig key:.*)' + INTERACTIVE_PROMPT,
-                r'.*(Error:.*)' + STANDARD_PROMPT,
-                r'.*' + INTERACTIVE_PROMPT,
-                r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
-            ])
-            if matched_index != 2:
-                raise JasminSyntaxError(
-                    detail=" ".join(telnet.match.group(1).split()))
-        telnet.sendline('ok')
-        telnet.sendline('persist\n')
-        telnet.expect(r'.*' + STANDARD_PROMPT)
-        if settings.JASMIN_DOCKER:
-            sync_conf_instances(request.telnet_list)
+            telnet.sendline('smppccm -a')
+            updates = request.data
+            for k, v in updates.items():
+                if not ((type(updates) is dict) and (len(updates) >= 1)):
+                    raise JasminSyntaxError('updates should be a a key value array')
+                telnet.sendline("%s %s" % (k, v))
+                matched_index = telnet.expect([
+                    r'.*(Unknown SMPPClientConfig key:.*)' + INTERACTIVE_PROMPT,
+                    r'.*(Error:.*)' + STANDARD_PROMPT,
+                    r'.*' + INTERACTIVE_PROMPT,
+                    r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
+                ])
+                if matched_index != 2:
+                    raise JasminSyntaxError(
+                        detail=" ".join(telnet.match.group(1).split()))
+            telnet.sendline('ok')
+            telnet.sendline('persist\n')
+            telnet.expect(r'.*' + STANDARD_PROMPT)
+
         return JsonResponse({'cid': request.data['cid']})
 
     def destroy(self, request, cid):
@@ -176,7 +172,10 @@ class SMPPCCMViewSet(ViewSet):
         - 404: nonexistent group
         - 400: other error
         """
-        return self.simple_smppccm_action(request.telnet, request.telnet_list, 'r', cid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_smppccm_action(telnet, 'r', cid)
+        return ret
 
     @parser_classes((JSONParser,))
     def partial_update(self, request, cid):
@@ -193,48 +192,47 @@ class SMPPCCMViewSet(ViewSet):
           type: array
           paramType: body
         """
-        telnet = request.telnet
-        telnet.sendline('smppccm -u ' + cid)
-        matched_index = telnet.expect([
-            r'.*Updating connector(.*)' + INTERACTIVE_PROMPT,
-            r'.*Unknown connector: (.*)' + STANDARD_PROMPT,
-            r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
-        ])
-        if matched_index == 1:
-            raise UnknownError(detail='Unknown connector:' + cid)
-        if matched_index != 0:
-            raise JasminError(detail=" ".join(telnet.match.group(0).split()))
-        updates = request.data
-        for k, v in updates.items():
-            if not ((type(updates) is dict) and (len(updates) >= 1)):
-                raise JasminSyntaxError('updates should be a a key value array')
-            telnet.sendline("%s %s" % (k, v))
+        for telnet in request.telnet_list:
+            telnet.sendline('smppccm -u ' + cid)
             matched_index = telnet.expect([
-                r'.*(Unknown SMPPClientConfig key:.*)' + INTERACTIVE_PROMPT,
-                r'.*(Error:.*)' + STANDARD_PROMPT,
-                r'.*' + INTERACTIVE_PROMPT,
+                r'.*Updating connector(.*)' + INTERACTIVE_PROMPT,
+                r'.*Unknown connector: (.*)' + STANDARD_PROMPT,
                 r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
             ])
-            if matched_index != 2:
+            if matched_index == 1:
+                raise UnknownError(detail='Unknown connector:' + cid)
+            if matched_index != 0:
+                raise JasminError(detail=" ".join(telnet.match.group(0).split()))
+            updates = request.data
+            for k, v in updates.items():
+                if not ((type(updates) is dict) and (len(updates) >= 1)):
+                    raise JasminSyntaxError('updates should be a a key value array')
+                telnet.sendline("%s %s" % (k, v))
+                matched_index = telnet.expect([
+                    r'.*(Unknown SMPPClientConfig key:.*)' + INTERACTIVE_PROMPT,
+                    r'.*(Error:.*)' + STANDARD_PROMPT,
+                    r'.*' + INTERACTIVE_PROMPT,
+                    r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
+                ])
+                if matched_index != 2:
+                    raise JasminSyntaxError(
+                        detail=" ".join(telnet.match.group(1).split()))
+            telnet.sendline('ok')
+            ok_index = telnet.expect([
+                r'.*(Error:.*)' + STANDARD_PROMPT,
+                r'(.*)' + INTERACTIVE_PROMPT,
+                r'.*' + STANDARD_PROMPT,
+            ])
+            if ok_index == 0:
                 raise JasminSyntaxError(
                     detail=" ".join(telnet.match.group(1).split()))
-        telnet.sendline('ok')
-        ok_index = telnet.expect([
-            r'.*(Error:.*)' + STANDARD_PROMPT,
-            r'(.*)' + INTERACTIVE_PROMPT,
-            r'.*' + STANDARD_PROMPT,
-        ])
-        if ok_index == 0:
-            raise JasminSyntaxError(
-                detail=" ".join(telnet.match.group(1).split()))
-        telnet.sendline('persist\n')
-        # Not sure why this needs to be repeated, just as with user
-        telnet.expect(r'.*' + STANDARD_PROMPT)
-        if settings.JASMIN_DOCKER:
-            sync_conf_instances(request.telnet_list)
+            telnet.sendline('persist\n')
+            # Not sure why this needs to be repeated, just as with user
+            telnet.expect(r'.*' + STANDARD_PROMPT)
+
 
         return JsonResponse(
-            {'connector': self.get_smppccm(telnet, cid, silent=False)})
+            {'connector': self.get_smppccm(request.telnet_list[0], cid, silent=False)})
 
     @detail_route(methods=['put'])
     def start(self, request, cid):
@@ -248,7 +246,10 @@ class SMPPCCMViewSet(ViewSet):
         - 404: nonexistent connector
         - 400: other error - this includes failure to start because it is started.
         """
-        return self.simple_smppccm_action(request.telnet, request.telnet_list, '1', cid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_smppccm_action(telnet, '1', cid)
+        return ret
 
     @detail_route(methods=['put'])
     def stop(self, request, cid):
@@ -262,4 +263,7 @@ class SMPPCCMViewSet(ViewSet):
         - 404: nonexistent connector
         - 400: other error - this includes failure to stop because it is stopped.
         """
-        return self.simple_smppccm_action(request.telnet, request.telnet_list, '0', cid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_smppccm_action(telnet, '0', cid)
+        return ret

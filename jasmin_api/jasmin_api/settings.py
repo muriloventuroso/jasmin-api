@@ -14,8 +14,7 @@ TELNET_PORT = 8991
 TELNET_USERNAME = 'jcliadmin'
 TELNET_PW = 'jclipwd'  # no alternative storing as plain text
 TELNET_TIMEOUT = 10  # reasonable value for intranet.
-JASMIN_DOCKER = True  # manage multiple instances of jasmin in docker
-JASMIN_DOCKER_PORTS = [8992, 8993, 8994]
+JASMIN_HOSTS = [('127.0.0.1', '8991'), ('127.0.0.1', '8992')]
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

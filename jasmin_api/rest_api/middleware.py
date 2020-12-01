@@ -14,51 +14,30 @@ class TelnetConnectionMiddleware(object):
         """
         if not request.path.startswith('/api/'):
             return None
-        try:
-            telnet = pexpect.spawn(
-                "telnet %s %s" %
-                (settings.TELNET_HOST, settings.TELNET_PORT),
-                timeout=settings.TELNET_TIMEOUT,
-            )
-            telnet.expect_exact('Username: ')
-            telnet.sendline(settings.TELNET_USERNAME)
-            telnet.expect_exact('Password: ')
-            telnet.sendline(settings.TELNET_PW)
-        except pexpect.EOF:
-            raise TelnetUnexpectedResponse
-        except pexpect.TIMEOUT:
-            raise TelnetConnectionTimeout
 
-        try:
-            telnet.expect_exact(settings.STANDARD_PROMPT)
-        except pexpect.EOF:
-            raise TelnetLoginFailed
-        else:
-            request.telnet = telnet
-        if settings.JASMIN_DOCKER:
-            request.telnet_list = []
-            for port in settings.JASMIN_DOCKER_PORTS:
-                try:
-                    telnet_item = pexpect.spawn(
-                        "telnet %s %s" %
-                        (settings.TELNET_HOST, port),
-                        timeout=settings.TELNET_TIMEOUT,
-                    )
-                    telnet_item.expect_exact('Username: ')
-                    telnet_item.sendline(settings.TELNET_USERNAME)
-                    telnet_item.expect_exact('Password: ')
-                    telnet_item.sendline(settings.TELNET_PW)
-                except pexpect.EOF:
-                    raise TelnetUnexpectedResponse
-                except pexpect.TIMEOUT:
-                    raise TelnetConnectionTimeout
+        request.telnet_list = []
+        for host, port in settings.JASMIN_HOSTS:
+            try:
+                telnet_item = pexpect.spawn(
+                    "telnet %s %s" %
+                    (host, port),
+                    timeout=settings.TELNET_TIMEOUT,
+                )
+                telnet_item.expect_exact('Username: ')
+                telnet_item.sendline(settings.TELNET_USERNAME)
+                telnet_item.expect_exact('Password: ')
+                telnet_item.sendline(settings.TELNET_PW)
+            except pexpect.EOF:
+                raise TelnetUnexpectedResponse
+            except pexpect.TIMEOUT:
+                raise TelnetConnectionTimeout
 
-                try:
-                    telnet_item.expect_exact(settings.STANDARD_PROMPT)
-                except pexpect.EOF:
-                    raise TelnetLoginFailed
-                else:
-                    request.telnet_list.append(telnet_item)
+            try:
+                telnet_item.expect_exact(settings.STANDARD_PROMPT)
+            except pexpect.EOF:
+                raise TelnetLoginFailed
+            else:
+                request.telnet_list.append(telnet_item)
         return None
 
     def process_response(self, request, response):

@@ -16,7 +16,7 @@ class GroupViewSet(ViewSet):
 
     def list(self, request):
         "List groups. No request parameters provided or required."
-        telnet = request.telnet
+        telnet = request.telnet_list[0]
         telnet.sendline('group -l')
         telnet.expect([r'(.+)\n' + STANDARD_PROMPT])
         result = telnet.match.group(0).strip().replace("\r", '').split("\n")
@@ -49,30 +49,34 @@ class GroupViewSet(ViewSet):
           type: string
           paramType: form
         """
-        telnet = request.telnet
-        telnet.sendline('group -a')
-        telnet.expect(r'Adding a new Group(.+)\n' + INTERACTIVE_PROMPT)
-        if not 'gid' in request.data:
-            raise MissingKeyError('Missing gid (group identifier)')
-        telnet.sendline('gid ' + request.data['gid'] + '\n')
-        telnet.expect(INTERACTIVE_PROMPT)
-        telnet.sendline('ok\n')
+        matched_index = None
+        telnet = None
+        for telnet in request.telnet_list:
+            telnet.sendline('group -a')
+            telnet.expect(r'Adding a new Group(.+)\n' + INTERACTIVE_PROMPT)
+            if not 'gid' in request.data:
+                raise MissingKeyError('Missing gid (group identifier)')
+            telnet.sendline('gid ' + request.data['gid'] + '\n')
+            telnet.expect(INTERACTIVE_PROMPT)
+            telnet.sendline('ok\n')
 
-        matched_index = telnet.expect([
-            r'.+Successfully added(.+)\[(.+)\][\n\r]+' + STANDARD_PROMPT,
-            r'.+Error: (.+)[\n\r]+' + INTERACTIVE_PROMPT,
-            r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
-        ])
+            matched_index = telnet.expect([
+                r'.+Successfully added(.+)\[(.+)\][\n\r]+' + STANDARD_PROMPT,
+                r'.+Error: (.+)[\n\r]+' + INTERACTIVE_PROMPT,
+                r'.+(.*)(' + INTERACTIVE_PROMPT + '|' + STANDARD_PROMPT + ')',
+            ])
+            if matched_index == 0:
+                telnet.sendline('persist\n')
+
         if matched_index == 0:
             gid = telnet.match.group(2).strip()
             telnet.sendline('persist\n')
-            if settings.JASMIN_DOCKER:
-                sync_conf_instances(request.telnet_list)
+
             return JsonResponse({'name': gid})
         else:
             raise ActionFailed(telnet.match.group(1))
 
-    def simple_group_action(self, telnet, telnet_list, action, gid):
+    def simple_group_action(self, telnet, action, gid):
         telnet.sendline('group -%s %s' % (action, gid))
         matched_index = telnet.expect([
             r'.+Successfully(.+)' + STANDARD_PROMPT,
@@ -81,8 +85,6 @@ class GroupViewSet(ViewSet):
         ])
         if matched_index == 0:
             telnet.sendline('persist\n')
-            if settings.JASMIN_DOCKER:
-                sync_conf_instances(telnet_list)
             return JsonResponse({'name': gid})
         elif matched_index == 1:
             raise ObjectNotFoundError('Unknown group: %s' % gid)
@@ -98,7 +100,10 @@ class GroupViewSet(ViewSet):
         - 404: nonexistent group
         - 400: other error
         """
-        return self.simple_group_action(request.telnet, request.telnet_list, 'r', gid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_group_action(telnet, 'r', gid)
+        return ret
 
     @detail_route(methods=['put'])
     def enable(self, request, gid):
@@ -110,7 +115,10 @@ class GroupViewSet(ViewSet):
         - 404: nonexistent group
         - 400: other error
         """
-        return self.simple_group_action(request.telnet, request.telnet_list, 'e', gid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_group_action(telnet, 'e', gid)
+        return ret
 
 
     @detail_route(methods=['put'])
@@ -125,4 +133,7 @@ class GroupViewSet(ViewSet):
         - 404: nonexistent group
         - 400: other error
         """
-        return self.simple_group_action(request.telnet, request.telnet_list, 'd', gid)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_group_action(telnet, 'd', gid)
+        return ret

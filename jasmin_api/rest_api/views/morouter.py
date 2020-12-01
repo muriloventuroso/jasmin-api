@@ -30,7 +30,6 @@ class MORouterViewSet(ViewSet):
         results = [l.replace(', ', ',').replace('(!)', '')
             for l in result[2:-2] if l]
         routers = split_cols(results)
-        print routers
         return {
             'morouters':
                 [
@@ -46,7 +45,7 @@ class MORouterViewSet(ViewSet):
 
     def list(self, request):
         "List MO routers. No parameters"
-        return JsonResponse(self._list(request.telnet))
+        return JsonResponse(self._list(request.telnet_list[0]))
 
     def get_router(self, telnet, order):
         "Return data for one morouter as Python dict"
@@ -60,19 +59,18 @@ class MORouterViewSet(ViewSet):
 
     def retrieve(self, request, order):
         "Details for one MORouter by order (integer)"
-        return JsonResponse(self.get_router(request.telnet, order))
+        return JsonResponse(self.get_router(request.telnet_list[0], order))
 
 
     @list_route(methods=['delete'])
     def flush(self, request):
         "Flush entire routing table"
-        telnet = request.telnet
-        telnet.sendline('morouter -f')
-        telnet.expect([r'(.+)\n' + STANDARD_PROMPT])
-        telnet.sendline('persist\n')
-        telnet.expect(r'.*' + STANDARD_PROMPT)
-        if settings.JASMIN_DOCKER:
-                sync_conf_instances(request.telnet_list)
+        for telnet in request.telnet_list:
+            telnet.sendline('morouter -f')
+            telnet.expect([r'(.+)\n' + STANDARD_PROMPT])
+            telnet.sendline('persist\n')
+            telnet.expect(r'.*' + STANDARD_PROMPT)
+
         return JsonResponse({'morouters': []})
 
     def create(self, request):
@@ -109,7 +107,6 @@ class MORouterViewSet(ViewSet):
           type: array
           paramType: form
         """
-        telnet = request.telnet
         data = request.data
         try:
             rtype, order = data['type'], data['order']
@@ -117,8 +114,6 @@ class MORouterViewSet(ViewSet):
             raise MissingKeyError(
                 'Missing parameter: type or order required')
         rtype = rtype.lower()
-        telnet.sendline('morouter -a')
-        telnet.expect(r'Adding a new MO Route(.+)\n' + INTERACTIVE_PROMPT)
         ikeys = OrderedDict({'type': rtype})
         if rtype != 'defaultroute':
             try:
@@ -127,7 +122,6 @@ class MORouterViewSet(ViewSet):
                 raise MissingKeyError('%s router requires filters' % rtype)
             ikeys['filters'] = ';'.join(filters)
             ikeys['order'] = order
-            print(ikeys)
         smppconnectors = data.get('smppconnectors', '')
         httpconnectors = data.get('httpconnectors', '')
         connectors = ['smpps(%s)' % c.strip()
@@ -142,14 +136,16 @@ class MORouterViewSet(ViewSet):
             if len(connectors) != 1:
                 raise MissingKeyError('one and only one connector required')
             ikeys['connector'] = connectors[0]
-        set_ikeys(telnet, ikeys)
-        telnet.sendline('persist\n')
-        telnet.expect(r'.*' + STANDARD_PROMPT)
-        if settings.JASMIN_DOCKER:
-                sync_conf_instances(request.telnet_list)
-        return JsonResponse({'morouter': self.get_router(telnet, order)})
+        for telnet in request.telnet_list:
+            telnet.sendline('morouter -a')
+            telnet.expect(r'Adding a new MO Route(.+)\n' + INTERACTIVE_PROMPT)
+            
+            set_ikeys(telnet, ikeys)
+            telnet.sendline('persist\n')
+            telnet.expect(r'.*' + STANDARD_PROMPT)
+        return JsonResponse({'morouter': self.get_router(request.telnet_list[0], order)})
 
-    def simple_morouter_action(self, telnet, telnet_list, action, order, return_moroute=True):
+    def simple_morouter_action(self, telnet, action, order, return_moroute=True):
         telnet.sendline('morouter -%s %s' % (action, order))
         matched_index = telnet.expect([
             r'.+Successfully(.+)' + STANDARD_PROMPT,
@@ -160,12 +156,8 @@ class MORouterViewSet(ViewSet):
             telnet.sendline('persist\n')
             if return_moroute:
                 telnet.expect(r'.*' + STANDARD_PROMPT)
-                if settings.JASMIN_DOCKER:
-                    sync_conf_instances(telnet_list)
                 return JsonResponse({'morouter': self.get_router(telnet, order)})
             else:
-                if settings.JASMIN_DOCKER:
-                    sync_conf_instances(telnet_list)
                 return JsonResponse({'order': order})
         elif matched_index == 1:
             raise UnknownError(detail='No router:' +  order)
@@ -181,5 +173,7 @@ class MORouterViewSet(ViewSet):
         - 404: nonexistent router
         - 400: other error
         """
-        return self.simple_morouter_action(
-            request.telnet, request.telnet_list, 'r', order, return_moroute=False)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_morouter_action(telnet, 'r', order, return_moroute=False)
+        return ret

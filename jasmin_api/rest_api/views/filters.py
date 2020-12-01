@@ -82,7 +82,8 @@ class FiltersViewSet(ViewSet):
           type: string
           paramType: form
         """
-        telnet = request.telnet
+        telnet = None
+        fid = None
         data = request.data
         try:
             ftype, fid = data['type'], data['fid']
@@ -90,8 +91,9 @@ class FiltersViewSet(ViewSet):
             raise MissingKeyError(
                 'Missing parameter: type or fid required')
         ftype = ftype.lower()
-        telnet.sendline('filter -a')
-        telnet.expect(r'Adding a new Filter(.+)\n' + INTERACTIVE_PROMPT)
+        if not request.telnet_list:
+            return JsonResponse(status=401)
+        
         ikeys = OrderedDict({'type': ftype, 'fid': fid})
         if ftype != 'transparentfilter':
             try:
@@ -118,14 +120,19 @@ class FiltersViewSet(ViewSet):
                 ikeys['tag'] = parameter
             elif ftype == 'evalpyfilter':
                 ikeys['pyCode'] = parameter
-        set_ikeys(telnet, ikeys)
-        telnet.sendline('persist\n')
-        telnet.expect(r'.*' + STANDARD_PROMPT)
-        if settings.JASMIN_DOCKER:
-            sync_conf_instances(request.telnet_list)
+
+        for telnet in request.telnet_list:
+
+            telnet.sendline('filter -a')
+            telnet.expect(r'Adding a new Filter(.+)\n' + INTERACTIVE_PROMPT)
+            
+            set_ikeys(telnet, ikeys)
+            telnet.sendline('persist\n')
+            telnet.expect(r'.*' + STANDARD_PROMPT)
+
         return JsonResponse({'filter': self.get_filter(telnet, fid)})
 
-    def simple_filter_action(self, telnet, telnet_list, action, fid, return_filter=True):
+    def simple_filter_action(self, telnet, action, fid, return_filter=True):
         telnet.sendline('filter -%s %s' % (action, fid))
         matched_index = telnet.expect([
             r'.+Successfully(.+)' + STANDARD_PROMPT,
@@ -136,12 +143,8 @@ class FiltersViewSet(ViewSet):
             telnet.sendline('persist\n')
             if return_filter:
                 telnet.expect(r'.*' + STANDARD_PROMPT)
-                if settings.JASMIN_DOCKER:
-                    sync_conf_instances(telnet_list)
                 return JsonResponse({'filter': self.get_filter(telnet, fid)})
             else:
-                if settings.JASMIN_DOCKER:
-                    sync_conf_instances(telnet_list)
                 return JsonResponse({'fid': fid})
         elif matched_index == 1:
             raise UnknownError(detail='No filter:' +  fid)
@@ -157,5 +160,7 @@ class FiltersViewSet(ViewSet):
         - 404: nonexistent filter
         - 400: other error
         """
-        return self.simple_filter_action(
-            request.telnet, request.telnet_list, 'r', fid, return_filter=False)
+        ret = JsonResponse()
+        for telnet in request.telnet_list:
+            ret = self.simple_filter_action(telnet, 'r', fid, return_filter=False)
+        return ret
